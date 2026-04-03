@@ -1,0 +1,12 @@
+{
+	"allowScripts": ["npm:sharp@0.34.5"],
+	"imports": {
+		"sharp": "npm:sharp@^0.34.5",
+	},
+	"nodeModulesDir": "auto",
+	"tasks": {
+		"dev": "deno run --allow-env --allow-ffi --allow-net --allow-read main.ts",
+		"start": "deno run --allow-env --allow-ffi --allow-net --allow-read main.ts",
+		"check": "deno check main.ts",
+	},
+}
