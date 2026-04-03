@@ -12,19 +12,21 @@ By default the small size, regular weight SVG data is provided. If this isn't wh
 
 Example: `https://sf.andrilla.net/hand.palm.facing?fm=png&w=256&size=large&weight=bold`
 
+- **bg**: Set the background hex value (exclude `#`).
 - **fill**: Set the fill hex value (exclude `#`).
 - **fm**: Select the image format.
   - svg (default)
   - png
   - webp
   - jpg
+- **h**: Set the pixel height (number).
+- **p**: Set the padding pixel value (number).
 - **size**: Select the SF Symbol size.
   - small (default)
   - medium
   - large
 - **stroke**: Set the stroke hex value (exclude `#`).
-- **stroke-w**: Set the stroke-width pixel value (number).
-- **h**: Set the pixel height (number).
+- **stroke-w**: Set the stroke-width value (number).
 - **w**: Set the pixel width (number).
 - **weight**: Select the SF Symbol weight.
   - ultralight
