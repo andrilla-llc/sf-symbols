@@ -1,15 +1,15 @@
 export type OutputFormat = "svg" | "png" | "webp" | "jpg";
 
 export type RequestOptions = {
-  symbolName: string;
-  size: string;
-  weight: string;
-  fm: OutputFormat;
-  fill: string | null;
   bg: string | null;
+  fill: string | null;
+  fm: OutputFormat;
+  h: number | null;
+  p: number | null;
+  size: string;
   stroke: string | null;
   strokeW: number | null;
-  p: number | null;
+  symbolName: string;
   w: number | null;
-  h: number | null;
+  weight: string;
 };

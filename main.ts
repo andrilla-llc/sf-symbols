@@ -1,3 +1,8 @@
+import postcss from "postcss";
+import tailwindPostcss from "@tailwindcss/postcss";
+import { build } from "vite";
+import react from "@vitejs/plugin-react";
+
 import {
   getCacheControlHeader,
   getSymbolSvgPath,
@@ -9,9 +14,95 @@ import {
   transformSvg,
 } from "./utils/index.ts";
 
+const PORT = 8000;
+
 const textDecoder = new TextDecoder();
 
-Deno.serve(async (request) => {
+let compiledGlobalsCssCache: string | null = null,
+  compiledGlobalsCssErrorCache: string | null = null,
+  compiledClientJsCache: string | null = null,
+  compiledClientJsErrorCache: string | null = null;
+
+async function getCompiledGlobalsCss(): Promise<string> {
+  if (compiledGlobalsCssCache !== null) return compiledGlobalsCssCache;
+  if (compiledGlobalsCssErrorCache !== null) {
+    throw new Error(compiledGlobalsCssErrorCache);
+  }
+
+  try {
+    const sourceCss = await Deno.readTextFile("src/globals.css");
+
+    const result = await postcss([
+      tailwindPostcss(),
+    ]).process(sourceCss, {
+      from: "src/globals.css",
+    });
+
+    compiledGlobalsCssCache = result.css;
+    return result.css;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    compiledGlobalsCssErrorCache = message;
+    throw new Error(`Tailwind compile failed: ${message}`);
+  }
+}
+
+async function getCompiledClientJs(): Promise<string> {
+  if (compiledClientJsCache !== null) return compiledClientJsCache;
+  if (compiledClientJsErrorCache !== null) {
+    throw new Error(compiledClientJsErrorCache);
+  }
+
+  try {
+    const buildResult = await build({
+      configFile: false,
+      root: Deno.cwd(),
+      appType: "custom",
+      plugins: [
+        react(),
+      ],
+      resolve: {
+        alias: {
+          "@std/text": "jsr:@std/text",
+        },
+      },
+      build: {
+        write: false,
+        minify: false,
+        sourcemap: false,
+        rollupOptions: {
+          input: "src/main.tsx",
+          output: {
+            format: "es",
+            entryFileNames: "client.js",
+          },
+        },
+      },
+    });
+
+    const outputList = Array.isArray(buildResult) ? buildResult : [buildResult];
+    const outputChunkList = outputList.flatMap((output) =>
+      "output" in output ? output.output : []
+    );
+    const entryChunk = outputChunkList.find((chunk) =>
+      chunk.type === "chunk" && chunk.isEntry
+    );
+
+    if (!entryChunk || entryChunk.type !== "chunk") {
+      throw new Error("Vite did not produce an entry client chunk");
+    }
+
+    compiledClientJsCache = entryChunk.code;
+    compiledClientJsErrorCache = null;
+    return entryChunk.code;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    compiledClientJsErrorCache = message;
+    throw new Error(`Client script compile failed: ${message}`);
+  }
+}
+
+Deno.serve({ port: PORT }, async (request) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method Not Allowed", {
       status: 405,
@@ -32,6 +123,89 @@ Deno.serve(async (request) => {
         "cache-control": "no-store",
       },
     });
+  }
+
+  if (url.pathname === "/dist/globals.css") {
+    try {
+      const css = await getCompiledGlobalsCss();
+
+      return new Response(css, {
+        status: 200,
+        headers: {
+          "content-type": "text/css; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    } catch {
+      return jsonError(500, "Could not compile Tailwind CSS");
+    }
+  }
+
+  if (url.pathname === "/site.webmanifest") {
+    try {
+      const manifest = await Deno.readTextFile("src/site.webmanifest");
+
+      return new Response(manifest, {
+        status: 200,
+        headers: {
+          "content-type": "application/manifest+json; charset=utf-8",
+          "cache-control": "public, max-age=3600",
+        },
+      });
+    } catch {
+      return jsonError(500, "Could not read src/site.webmanifest");
+    }
+  }
+
+  if (url.pathname === "/") {
+    try {
+      const indexHtml = await Deno.readTextFile("src/index.html");
+
+      const withRoot = indexHtml.includes('<div id="root"></div>')
+        ? indexHtml
+        : indexHtml.replace(
+          "</body>",
+          `<div id="root"></div></body>`,
+        );
+      const html = withRoot.includes('src="/dist/client.js"')
+        ? withRoot
+        : withRoot.replace(
+          "</body>",
+          `<script type="module" src="/dist/client.js"></script></body>`,
+        );
+
+      return new Response(html, {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    } catch {
+      return jsonError(500, "Could not render React app");
+    }
+  }
+
+  if (url.pathname === "/dist/client.js") {
+    try {
+      const clientJs = await getCompiledClientJs();
+
+      return new Response(clientJs, {
+        status: 200,
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error
+        ? error.message
+        : String(error);
+      return jsonError(
+        500,
+        `Could not compile client script: ${errorMessage}`,
+      );
+    }
   }
 
   const parsedResult = parseOptions(url);

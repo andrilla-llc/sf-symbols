@@ -1,12 +1,31 @@
 {
 	"allowScripts": ["npm:sharp@0.34.5"],
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"lib": ["dom", "dom.iterable", "esnext", "deno.ns"],
+	},
 	"imports": {
+		"@andrilla/mado-ui": "npm:@andrilla/mado-ui@^1.1.2",
+		"@andrilla/react-sf": "npm:@andrilla/react-sf@^1.0.0",
+		"@std/text": "jsr:@std/text@^1.0.17",
+		"@tailwindcss/postcss": "npm:@tailwindcss/postcss@^4.2.2",
+		"@types/react": "npm:@types/react@^19.2.14",
+		"@types/react-dom": "npm:@types/react-dom@^19.2.3",
+		"@vitejs/plugin-react": "npm:@vitejs/plugin-react@^6.0.1",
+		"babel-plugin-react-compiler": "npm:babel-plugin-react-compiler@^1.0.0",
+
+		"postcss": "npm:postcss@^8.5.8",
+		"react": "npm:react@^19.2.4",
+		"react-dom": "npm:react-dom@^19.2.4",
 		"sharp": "npm:sharp@^0.34.5",
+		"tailwindcss": "npm:tailwindcss@^4.2.2",
+		"vite": "npm:vite@^8.0.3",
 	},
 	"nodeModulesDir": "auto",
 	"tasks": {
-		"dev": "deno run --allow-env --allow-ffi --allow-net --allow-read main.ts",
-		"start": "deno run --allow-env --allow-ffi --allow-net --allow-read main.ts",
+		"dev": "deno run --watch=main.ts,types.ts,src,utils --allow-env --allow-ffi --allow-net --allow-read --allow-run --allow-sys main.ts",
+		"start": "deno run --allow-env --allow-ffi --allow-net --allow-read --allow-run --allow-sys main.ts",
 		"check": "deno check main.ts",
+		"generate-symbol-name-list": "deno run --allow-read --allow-write scripts/generate-symbol-name-list.ts",
 	},
 }
