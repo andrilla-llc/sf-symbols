@@ -12,6 +12,7 @@
 		"@types/react": "npm:@types/react@^19.2.14",
 		"@types/react-dom": "npm:@types/react-dom@^19.2.3",
 		"@vitejs/plugin-react": "npm:@vitejs/plugin-react@^6.0.1",
+
 		"babel-plugin-react-compiler": "npm:babel-plugin-react-compiler@^1.0.0",
 
 		"postcss": "npm:postcss@^8.5.8",
@@ -23,6 +24,7 @@
 	},
 	"nodeModulesDir": "auto",
 	"tasks": {
+		"build": "deno run -A npm:vite build",
 		"dev": "deno run --watch=main.ts,types.ts,src,utils --allow-env --allow-ffi --allow-net --allow-read --allow-run --allow-sys main.ts",
 		"start": "deno run --allow-env --allow-ffi --allow-net --allow-read --allow-run --allow-sys main.ts",
 		"check": "deno check main.ts",

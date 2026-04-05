@@ -16,6 +16,7 @@
     "npm:react@^19.2.4": "19.2.4",
     "npm:sharp@~0.34.5": "0.34.5",
     "npm:tailwindcss@^4.2.2": "4.2.2",
+    "npm:vite@*": "8.0.3_esbuild@0.25.12_@emnapi+core@1.9.2_@emnapi+runtime@1.9.2",
     "npm:vite@^8.0.3": "8.0.3_esbuild@0.25.12_@emnapi+core@1.9.2_@emnapi+runtime@1.9.2"
   },
   "jsr": {
