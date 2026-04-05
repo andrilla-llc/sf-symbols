@@ -246,10 +246,9 @@ Deno.serve({ port: PORT }, async (request) => {
       const cssFileList = entry?.css ?? [];
 
       const styleTagList = cssFileList.map((cssFile) =>
-        `<link rel="stylesheet" href="/assets/${cssFile}">`
+        `<link rel="stylesheet" href="/${cssFile}">`
       );
-      const scriptTag =
-        `<script type="module" src="/assets/${entryFile}"></script>`;
+      const scriptTag = `<script type="module" src="/${entryFile}"></script>`;
       const assetTagList = [...styleTagList, scriptTag].join("");
       const html = withRoot.replace(
         "</body>",
