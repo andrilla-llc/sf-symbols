@@ -41,7 +41,7 @@ function toKebabCase(value: string): string {
     .toLowerCase();
 }
 
-const BASE_URL = "http://localhost:8000";
+const BASE_URL = "https://sf.andrilla.net";
 
 const optionKeyList: (keyof RequestOptions)[] = [
   "bg",
