@@ -1,7 +1,5 @@
 import postcss from "postcss";
 import tailwindPostcss from "@tailwindcss/postcss";
-import { build } from "vite";
-import react from "@vitejs/plugin-react";
 
 import {
   getCacheControlHeader,
@@ -17,11 +15,60 @@ import {
 const PORT = 8000;
 
 const textDecoder = new TextDecoder();
+const pathSeparator = "/";
+const rootPath = ".";
+const indexHtmlPath = "src/index.html";
+const sourceGlobalsCssPath = "src/globals.css";
+const builtManifestPath = "dist/client/.vite/manifest.json";
+const builtAssetsPath = "dist/client/assets";
+
+type BuiltManifestEntry = {
+  file: string;
+  src?: string;
+  isEntry?: boolean;
+  css?: string[];
+};
+
+type BuiltManifest = Record<string, BuiltManifestEntry>;
 
 let compiledGlobalsCssCache: string | null = null,
   compiledGlobalsCssErrorCache: string | null = null,
-  compiledClientJsCache: string | null = null,
-  compiledClientJsErrorCache: string | null = null;
+  builtManifestCache: BuiltManifest | null = null,
+  builtManifestErrorCache: string | null = null;
+
+function normalizeSafeRelativePath(pathname: string): string | null {
+  const decodedPathname = decodeURIComponent(pathname);
+  const withoutLeadingSlash = decodedPathname.replace(/^\/+/, "");
+  const normalizedPath = withoutLeadingSlash.replace(/\\/g, "/");
+
+  if (normalizedPath.includes("..")) return null;
+  if (normalizedPath.length === 0) return null;
+
+  return normalizedPath;
+}
+
+function contentTypeFromPath(path: string): string {
+  if (path.endsWith(".js")) return "text/javascript; charset=utf-8";
+  if (path.endsWith(".css")) return "text/css; charset=utf-8";
+  if (path.endsWith(".json")) return "application/json; charset=utf-8";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".woff2")) return "font/woff2";
+  if (path.endsWith(".woff")) return "font/woff";
+  if (path.endsWith(".ttf")) return "font/ttf";
+  if (path.endsWith(".map")) return "application/json; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function cacheControlForAssetPath(path: string): string {
+  if (/\.[A-Za-z0-9_-]{8,}\./.test(path)) {
+    return "public, max-age=31536000, immutable";
+  }
+
+  return "public, max-age=3600";
+}
 
 async function getCompiledGlobalsCss(): Promise<string> {
   if (compiledGlobalsCssCache !== null) return compiledGlobalsCssCache;
@@ -30,12 +77,12 @@ async function getCompiledGlobalsCss(): Promise<string> {
   }
 
   try {
-    const sourceCss = await Deno.readTextFile("src/globals.css");
+    const sourceCss = await Deno.readTextFile(sourceGlobalsCssPath);
 
     const result = await postcss([
       tailwindPostcss(),
     ]).process(sourceCss, {
-      from: "src/globals.css",
+      from: sourceGlobalsCssPath,
     });
 
     compiledGlobalsCssCache = result.css;
@@ -47,58 +94,59 @@ async function getCompiledGlobalsCss(): Promise<string> {
   }
 }
 
-async function getCompiledClientJs(): Promise<string> {
-  if (compiledClientJsCache !== null) return compiledClientJsCache;
-  if (compiledClientJsErrorCache !== null) {
-    throw new Error(compiledClientJsErrorCache);
+async function getBuiltManifest(): Promise<BuiltManifest> {
+  if (builtManifestCache !== null) return builtManifestCache;
+  if (builtManifestErrorCache !== null) {
+    throw new Error(builtManifestErrorCache);
   }
 
   try {
-    const buildResult = await build({
-      configFile: false,
-      root: Deno.cwd(),
-      appType: "custom",
-      plugins: [
-        react(),
-      ],
-      resolve: {
-        alias: {
-          "@std/text": "jsr:@std/text",
-        },
-      },
-      build: {
-        write: false,
-        minify: false,
-        sourcemap: false,
-        rollupOptions: {
-          input: "src/main.tsx",
-          output: {
-            format: "es",
-            entryFileNames: "client.js",
-          },
-        },
-      },
-    });
+    const manifestRaw = await Deno.readTextFile(builtManifestPath);
+    const manifest = JSON.parse(manifestRaw) as BuiltManifest;
 
-    const outputList = Array.isArray(buildResult) ? buildResult : [buildResult];
-    const outputChunkList = outputList.flatMap((output) =>
-      "output" in output ? output.output : []
-    );
-    const entryChunk = outputChunkList.find((chunk) =>
-      chunk.type === "chunk" && chunk.isEntry
-    );
+    builtManifestCache = manifest;
+    builtManifestErrorCache = null;
 
-    if (!entryChunk || entryChunk.type !== "chunk") {
-      throw new Error("Vite did not produce an entry client chunk");
-    }
-
-    compiledClientJsCache = entryChunk.code;
-    compiledClientJsErrorCache = null;
-    return entryChunk.code;
+    return manifest;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    compiledClientJsErrorCache = message;
-    throw new Error(`Client script compile failed: ${message}`);
+    builtManifestErrorCache = message;
+    throw new Error(`Could not read Vite manifest: ${message}`);
+  }
+}
+
+function resolveViteEntryFromManifest(manifest: BuiltManifest): string | null {
+  const directMainEntry = manifest["src/main.tsx"];
+  if (directMainEntry?.file) return directMainEntry.file;
+
+  for (const entry of Object.values(manifest)) {
+    if (entry?.isEntry && entry.file) return entry.file;
+  }
+
+  return null;
+}
+
+async function serveBuiltAsset(pathname: string): Promise<Response> {
+  const safeRelativePath = normalizeSafeRelativePath(pathname);
+  if (!safeRelativePath) return jsonError(400, "Invalid asset path");
+
+  const absolutePath = `${rootPath}${pathSeparator}${safeRelativePath}`;
+
+  try {
+    const fileInfo = await Deno.stat(absolutePath);
+    if (!fileInfo.isFile) return jsonError(404, "Asset not found");
+
+    const fileBytes = await Deno.readFile(absolutePath);
+
+    return new Response(fileBytes, {
+      status: 200,
+      headers: {
+        "content-type": contentTypeFromPath(safeRelativePath),
+        "cache-control": cacheControlForAssetPath(safeRelativePath),
+      },
+    });
+  } catch {
+    return jsonError(404, "Asset not found");
   }
 }
 
@@ -136,8 +184,9 @@ Deno.serve({ port: PORT }, async (request) => {
           "cache-control": "no-store",
         },
       });
-    } catch {
-      return jsonError(500, "Could not compile Tailwind CSS");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonError(500, `Could not compile Tailwind CSS: ${message}`);
     }
   }
 
@@ -157,9 +206,33 @@ Deno.serve({ port: PORT }, async (request) => {
     }
   }
 
+  if (url.pathname.startsWith("/assets/")) {
+    const response = await serveBuiltAsset(
+      `${builtAssetsPath}/${url.pathname.replace(/^\/assets\//, "")}`,
+    );
+
+    if (request.method === "HEAD" && response.status === 200) {
+      const contentLength = response.headers.get("content-length");
+      const headers = new Headers(response.headers);
+      if (contentLength) headers.set("content-length", contentLength);
+      return new Response(null, { status: 200, headers });
+    }
+
+    return response;
+  }
+
   if (url.pathname === "/") {
     try {
-      const indexHtml = await Deno.readTextFile("src/index.html");
+      const indexHtml = await Deno.readTextFile(indexHtmlPath);
+      const manifest = await getBuiltManifest();
+      const entryFile = resolveViteEntryFromManifest(manifest);
+
+      if (!entryFile) {
+        return jsonError(
+          500,
+          "Could not locate Vite entry in dist/client/.vite/manifest.json",
+        );
+      }
 
       const withRoot = indexHtml.includes('<div id="root"></div>')
         ? indexHtml
@@ -167,12 +240,21 @@ Deno.serve({ port: PORT }, async (request) => {
           "</body>",
           `<div id="root"></div></body>`,
         );
-      const html = withRoot.includes('src="/dist/client.js"')
-        ? withRoot
-        : withRoot.replace(
-          "</body>",
-          `<script type="module" src="/dist/client.js"></script></body>`,
-        );
+
+      const entry = manifest["src/main.tsx"] ??
+        Object.values(manifest).find((candidate) => candidate?.isEntry);
+      const cssFileList = entry?.css ?? [];
+
+      const styleTagList = cssFileList.map((cssFile) =>
+        `<link rel="stylesheet" href="/assets/${cssFile}">`
+      );
+      const scriptTag =
+        `<script type="module" src="/assets/${entryFile}"></script>`;
+      const assetTagList = [...styleTagList, scriptTag].join("");
+      const html = withRoot.replace(
+        "</body>",
+        `${assetTagList}</body>`,
+      );
 
       return new Response(html, {
         status: 200,
@@ -181,30 +263,9 @@ Deno.serve({ port: PORT }, async (request) => {
           "cache-control": "no-store",
         },
       });
-    } catch {
-      return jsonError(500, "Could not render React app");
-    }
-  }
-
-  if (url.pathname === "/dist/client.js") {
-    try {
-      const clientJs = await getCompiledClientJs();
-
-      return new Response(clientJs, {
-        status: 200,
-        headers: {
-          "content-type": "text/javascript; charset=utf-8",
-          "cache-control": "no-store",
-        },
-      });
     } catch (error) {
-      const errorMessage = error instanceof Error
-        ? error.message
-        : String(error);
-      return jsonError(
-        500,
-        `Could not compile client script: ${errorMessage}`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonError(500, `Could not render React app: ${message}`);
     }
   }
 
